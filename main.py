@@ -10,7 +10,7 @@ from PyQt6.QtCore import QThread, pyqtSignal, Qt
 import json
 
 # --- Configuration ---
-API_URL = "http://192.168.1.130:8000/query" # Ensure this is the correct URL
+API_URL = "BACKEND_SERVER/query" # Ensure this is the correct URL
 
 # --- Worker Thread for API Calls ---
 

@@ -14,28 +14,35 @@ from langchain_core.output_parsers import StrOutputParser
 
 # Vector DB & models
 from langchain_community.vectorstores import Chroma
-from langchain_community.llms import GPT4All as LangchainGPT4All
+from langchain_community.llms import LlamaCpp
 from langchain_community.document_loaders import JSONLoader
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-
 # --- Configuration ---
-FILE_PATH = './enterprise-attack.json'
+FILE_PATH = './attacking_scenarios/enterprise-attack.json'
 JQ_SCHEMA = '.objects[] | select(.type | contains(\"attack-pattern\"))'
 PERSIST_DIRECTORY = './mitre_vector_db'
 
-LLM_MODEL_NAME = "/home/nasser/.local/share/nomic.ai/GPT4All/qwen2-1_5b-instruct-q4_0.gguf"
+LLM_MODEL_NAME = ""
 
 TOP_K_RETRIEVAL = 5
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 200
 
 # Our RAG pipeline (LCEL)
+
+app = FastAPI(
+    title="GPT4All RAG Wrapper",
+    description="Local RAG pipeline using HuggingFace GPU embeddings + GPT4All LLM.",
+    version="1.0.0"
+)
+
+
 rag_chain: Optional[RunnableParallel] = None
 
 
-# --- Vector Store Setup (with caching / reuse) ---
+
 def setup_vector_store(file_path: str, jq_schema: str, persist_directory: str) -> Chroma:
     persist_path = Path(persist_directory)
 
@@ -90,12 +97,61 @@ def setup_vector_store(file_path: str, jq_schema: str, persist_directory: str) -
     return vectorstore
 
 
-app = FastAPI(
-    title="GPT4All RAG Wrapper",
-    description="Local RAG pipeline using HuggingFace GPU embeddings + GPT4All LLM.",
-    version="1.0.0"
-)
 
+def build_rag_chain():
+    print('--- Starting RAG Chain Initialization ---')
+    try:
+        # 1. Setup the Vector Store (Data Ingestion)
+        # This function runs synchronously during startup, which is typical for initializing resources.
+        vectorstore = setup_vector_store(FILE_PATH, JQ_SCHEMA, PERSIST_DIRECTORY)
+
+        # 2. Initialize the Local LLM (qwen2-1_5b-instruct-q4_0)
+        print(f"\nLoading LLM: {LLM_MODEL_NAME}")
+        print(f"Loading GGUF model from: {LLM_MODEL_NAME}")
+        llm = LlamaCpp(
+            model_path=LLM_MODEL_NAME,
+            n_ctx=4096,
+            temperature=0.3,
+            n_gpu_layers=-1,  # offload all layers to GPU (if compiled with CUDA)
+            # n_threads=8,
+            # n_batch=128,
+        )
+        print("LLM loaded successfully.")
+
+        # 3. Set up the Retriever and RAG Chain
+        retriever = vectorstore.as_retriever(search_kwargs={"k": TOP_K_RETRIEVAL})
+        # 4. Build a modern RAG chain (no langchain.chains)
+        system_prompt = (
+            "You are a cybersecurity assistant specialized in the MITRE ATT&CK framework. "
+            "Use the given system components to create 5 attack scenarios based on MITRE ATT&CK. "
+            "System components:\n{context}"
+        )
+
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", system_prompt)
+            ]
+        )
+        retrieval_chain = (
+            {"context": retriever}
+            | prompt
+            | llm
+            | StrOutputParser()
+        )
+        
+        rag_chain = RunnableParallel(
+            answer=retrieval_chain,
+            source_documents=retriever,
+        )
+        print("RAG RetrievalQA chain created and ready.")
+        return rag_chain
+    except Exception as e:
+        print(f"Error during RAG chain initialization: {e}", file=sys.stderr)
+        raise HTTPException(
+            status_code=500,
+            detail=f"An error occurred during RAG chain initialization: {e}. Check model and data files."
+        )
+        return None
 
 
 class QueryRequest(BaseModel):
@@ -117,65 +173,12 @@ app = FastAPI(
 @app.on_event("startup")
 async def startup_event():
     global rag_chain
+    rag_chain = build_rag_chain()
 
-    print('--- Starting RAG Chain Initialization ---')
-    try:
-        # 1. Setup the Vector Store (Data Ingestion)
-        # This function runs synchronously during startup, which is typical for initializing resources.
-        vectorstore = setup_vector_store(FILE_PATH, JQ_SCHEMA, PERSIST_DIRECTORY)
-
-        # 2. Initialize the Local LLM (qwen2-1_5b-instruct-q4_0)
-        print(f"\nLoading LLM: {LLM_MODEL_NAME}")
-        llm = LangchainGPT4All(
-            model=LLM_MODEL_NAME,
-            allow_download=True,
-            device='gpu'
-            # Pass LLM-specific parameters here if needed
-            # n_ctx=2048,
-            # n_threads=8
-        )
-        print("LLM loaded successfully.")
-
-        # 3. Set up the Retriever and RAG Chain
-        retriever = vectorstore.as_retriever(search_kwargs={"k": TOP_K_RETRIEVAL})
-        # 4. Build a modern RAG chain (no langchain.chains)
-        system_prompt = (
-            "You are a cybersecurity assistant specialized in the MITRE ATT&CK framework. "
-            "Use the given system components to create 5 attack scenarios based on MITRE ATT&CK. "
-            "System components:\n{context}"
-        )
-
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                ("system", system_prompt),
-                ("human", "{question}"),
-            ]
-        )
-        retrieval_chain = (
-            {"context": retriever, "question": RunnablePassthrough()}
-            | prompt
-            | llm
-            | StrOutputParser()
-        )
-        global rag_chain
-        rag_chain = RunnableParallel(
-            answer=retrieval_chain,
-            source_documents=retriever,
-        )
-
-        print("RAG RetrievalQA chain created and ready.")
-
-    except Exception as e:
-        print(f"Error during RAG chain initialization: {e}", file=sys.stderr)
-        raise HTTPException(
-            status_code=500,
-            detail=f"An error occurred during RAG chain initialization: {e}. Check model and data files."
-        )
 
 @app.post("/query/")
 async def execute_prompt(query: QueryRequest):
     global rag_chain
-
     if not rag_chain:
         raise HTTPException(status_code=503, detail="RAG Chain not initialized yet.")
     

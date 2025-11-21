@@ -1,6 +1,0 @@
-{
-    "threat_analysis": {
-        "role": "You are a professional cyber threat analyst and MITRE ATT&CK Framework expert.",
-        "content": "Provide a detailed report about {threat_name}, using the following template (and proper markdown language formatting, headings, bold keywords, tables, etc.):\n\nThreat Name (Heading 1)\n\nSummary (Heading 2)\nShort executive summary\n\nDetails (Heading 2)\nDescription and details including history/background, discovery, characteristics and TTPs, known incidents\n\nMITRE ATT&CK TTPs (Heading 2)\nTable containing all of the known MITRE ATT&CK TTPs that the {threat_name} attack uses. Include the following collumns: Tactic, Technique ID, Technique Name, Procedure (How {threat_name} uses it)\n\nIndicators of Compromise (Heading 2)\nTable containing all of the known indicators of compromise. Include the following collumns: Type, Value, Description\n" 
-    }
-}

@@ -1,2 +1,4 @@
 attacks_scenario_build/config.ini
 config.ini
+attacks_scenario_builder/mitre_vector_db/
+attacks_scenario_builder/__pycache__
