@@ -10,7 +10,7 @@ from PyQt6.QtCore import QThread, pyqtSignal, Qt
 import json
 
 # --- Configuration ---
-API_URL = "" # Ensure this is the correct URL
+API_URL = "http://192.168.1.130:8000/query" # Ensure this is the correct URL
 
 # --- Worker Thread for API Calls ---
 
@@ -121,9 +121,9 @@ class LLMClientApp(QMainWindow):
 
     def send_query(self):
         """Gathers input and initiates the API call in a separate thread."""
-        prompt = self.prompt_input.toPlainText().strip()
-        if not prompt:
-            QMessageBox.warning(self, "Input Error", "Please enter a prompt before generating.")
+        description = self.prompt_input.toPlainText().strip()
+        if not description:
+            QMessageBox.warning(self, "Input Error", "Please enter a description before generating.")
             return
 
         # Disable UI and show loading state
@@ -133,6 +133,10 @@ class LLMClientApp(QMainWindow):
         QApplication.processEvents() # Force UI update immediately
         
         # Construct the data payload
+        prompt = (f"Given the cybersecurity scenario description: '{description}', identify and list the key terms, "
+              "techniques, or technologies relevant to MITRE ATT&CK. Extract TTPs from the scenario. "
+              "If the description is too basic, expand upon it with additional details, applicable campaign, "
+              "or attack types based on dataset knowledge. Then, extract the TTPs from the revised description.")
         data = {
             "prompt": prompt,
             "max_tokens": self.max_tokens_spin.value(),

@@ -20,16 +20,4 @@ def read_json_to_dict(file_path):
         print(f"Error: Permission denied when accessing '{file_path}'.")
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
-
     return None
-
-
-def main():
-    if len(sys.argv) < 3:
-        print("Error: pplease choose a command")
-    prompts = read_json_to_dict(sys.argv[1])
-    print("Prompts: ", prompts)
-
-
-if __name__ == '__main__':
-    main()
